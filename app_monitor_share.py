@@ -48,11 +48,11 @@ Use the same workload and duration when comparing Macs.
    --help lists the available options.
 
 HARDWARE AND READINGS
-   The full sensor path was developed on an Apple M5 Max. Core group names
-   and counts are discovered from macOS, so other Apple Silicon chips may
-   list Performance and Efficiency cores instead of Super and Performance.
-   The per-group mapping assumes logical CPUs are ordered slowest group first.
-   Treat group readings as provisional on other models.
+   The full sensor path was developed on an Apple M5 Max. The script checks
+   the chip name and the core group names and counts reported by macOS.
+   Live per-core-type readings are enabled only on the tested M5 Max layout.
+   On other chips, including M5 Ultra, the script reports total CPU usage and
+   any available temperature, GPU, and power readings.
 
    Temperature uses macOS IOKit die sensors named PMU tdie*. The script keeps
    recording if it cannot find these sensors. Intel Macs use CPU utilization
@@ -419,7 +419,9 @@ def plot_chart(out, t, cpu, groups, group_data, freq_data, gpu, cpu_w, gpu_w, tm
 	if valid:
 		panels.append(("temp", 1.7))
 	if is_root:
-		panels += [("clock", 1.7), ("power", 1.5)]
+		if groups:
+			panels.append(("clock", 1.7))
+		panels.append(("power", 1.5))
 	width, header, gap, bottom = 12.0, 1.45, 0.8, 0.65
 	fig_h = header + sum(h for _, h in panels) + gap * (len(panels) - 1) + bottom
 	fig = plt.figure(figsize=(width, fig_h), facecolor=THEME["page"])
@@ -487,7 +489,7 @@ def plot_chart(out, t, cpu, groups, group_data, freq_data, gpu, cpu_w, gpu_w, tm
 		temp_items = [(tmax, COLOR_TEMP), (tavg, COLOR_TEMP)]
 
 	# --- Clock speed and power (sudo only) ---
-	if is_root:
+	if "clock" in axes:
 		ax = axes["clock"]
 		clock_items, handles = [], []
 		for (name, _), color in zip(groups, COLOR_GROUPS):
@@ -500,6 +502,7 @@ def plot_chart(out, t, cpu, groups, group_data, freq_data, gpu, cpu_w, gpu_w, tm
 		ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.1f}"))
 		_panel_header(ax, "Clock speed while active (GHz)", handles)
 
+	if is_root:
 		ax = axes["power"]
 		ax.plot(t, cpu_w, color=COLOR_ALL, linewidth=2)
 		ax.plot(t, gpu_w, color=COLOR_GPU, linewidth=2)
@@ -529,8 +532,9 @@ def plot_chart(out, t, cpu, groups, group_data, freq_data, gpu, cpu_w, gpu_w, tm
 	_end_labels(axes["util"], items, pct)
 	if valid:
 		_end_labels(axes["temp"], temp_items, lambda v: f"{v:.1f}°")
-	if is_root:
+	if "clock" in axes:
 		_end_labels(axes["clock"], clock_items, lambda v: f"{v:.2f}")
+	if is_root:
 		_end_labels(axes["power"], power_items, lambda v: f"{v:.1f} W")
 
 	fig.savefig(out, dpi=200, facecolor=THEME["page"])
@@ -757,7 +761,15 @@ def main():
 	else:
 		print("[i] CPU-only mode. Hardware sensors require native Apple Silicon macOS.")
 
-	groups = core_groups() if apple_silicon else []
+	# Counts alone cannot identify the CPU IDs that belong to each core type.
+	groups = []
+	if apple_silicon:
+		if _sysctl("machdep.cpu.brand_string") == "Apple M5 Max":
+			detected = core_groups()
+			if [(name, len(cores)) for name, cores in detected] == [("Super", 6), ("Performance", 12)]:
+				groups = detected
+		if not groups:
+			print("[i] Per-core-type readings unavailable for this CPU layout. Recording total CPU usage.")
 	if groups:
 		print("[i] Core types: " + ", ".join(f"{n} = cpu{c[0]}-{c[-1]} ({len(c)})" for n, c in groups))
 	cpu_type = {i: name for name, cores in groups for i in cores}
