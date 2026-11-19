@@ -1,7 +1,7 @@
 
+## mac_stress_test.py
 
-
-mac_stress_test.py -- how does this Mac hold up under a long video encode?
+how does this Mac hold up under a long video encode?
 
 The script records CPU load, chip temperature and (with sudo) GPU load, clock
 speed and power. After a short idle baseline it starts a software H.264 encode
